@@ -30,6 +30,8 @@ try:
     # channels created with the same context to be recorded to the file.
     ctx = foxglove.Context()
 
+    server = foxglove.start_server(context=ctx)
+
     # Open the MCAP writer once and keep it open while recording
     # allow_overwrite=True so repeated runs replace the file instead of erroring
     with foxglove.open_mcap("webcam.mcap", allow_overwrite=True, context=ctx) as writer:
@@ -38,6 +40,8 @@ try:
 
         frame_seq = 0  # approach A: simple per-run frame counter
 
+        frame_seq = 0  # fallback counter
+
         while True:
             sample = appsink.emit("pull-sample")
             if sample is None:
@@ -45,19 +49,30 @@ try:
 
             buf = sample.get_buffer()
             data = buf.extract_dup(0, buf.get_size())
+
+            # prefer PTS (presentation timestamp) as a stable frame identifier
+            pts = buf.pts
+            if pts != Gst.CLOCK_TIME_NONE:
+                frame_id = f"pts:{int(pts)}"
+            else:
+                dts = buf.dts
+                if dts != Gst.CLOCK_TIME_NONE:
+                    frame_id = f"dts:{int(dts)}"
+                else:
+                    frame_seq += 1
+                    frame_id = f"seq:{frame_seq}"
+
             timestamp_ns = Timestamp.from_epoch_secs(time.time())
 
-            # Wrap as Foxglove CompressedVideo (H.264 byte stream)
+            # Wrap as Foxglove CompressedVideo (H.264 annex-B byte stream)
             img_msg = CompressedVideo(
                 timestamp=timestamp_ns,
                 data=data,
                 format="h264",
-                frame_id=str(frame_seq),
+                frame_id=frame_id,
             )
 
-            # Write message to MCAP
             image_channel.log(img_msg)
-            frame_seq += 1
 
 except KeyboardInterrupt:
     print("\n🛑 Stopping recording...")
