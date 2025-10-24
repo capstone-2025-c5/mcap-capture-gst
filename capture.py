@@ -10,9 +10,8 @@ import argparse
 
 
 parser = argparse.ArgumentParser(description="Capture webcam video to MCAP file using Foxglove SDK and GStreamer")
-parser.add_argument("-c","--camera-index", type=int, default=0, help="first camera index to use (default: 0)")
 parser.add_argument("-m", "--mac", action="store_true", help="run the macos pipeline")
-parser.add_argument("--dual", action="store_true", help="start two pipelines: camera-index and camera-index+1")
+parser.add_argument("--dual", action="store_true", help="start two pipelines:")
 args = parser.parse_args()
 
 Gst.init(None)
@@ -30,7 +29,7 @@ appsink name=sink emit-signals=true max-buffers=1 drop=true
 pipeline_str = f"""
 nvarguscamerasrc sensor_id={{idx}} !
 video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1,format=NV12 !
-nvvidconv flip-method=0 ! video/x-raw,width=960,height=720 !
+nvvidconv flip-method={{flip}} ! video/x-raw,width=960,height=720 !
 nvv4l2h264enc bitrate=8000000 !
 h264parse config-interval=1 !
 video/x-h264,stream-format=byte-stream,alignment=au !
@@ -43,8 +42,11 @@ import threading
 def make_pipeline(idx: int):
     """Create and return (pipeline, appsink) for camera index `idx`."""
     try:
+        # Rotate camera 1 by 180 degrees, keep camera 0 as-is
+        flip_method = 2 if idx == 1 else 0
+        
         raw = pipeline_str_mac if args.mac else pipeline_str
-        p = Gst.parse_launch(raw.format(idx=idx))
+        p = Gst.parse_launch(raw.format(idx=idx, flip=flip_method))
         sink = p.get_by_name("sink")
         p.set_state(Gst.State.PLAYING)
         return p, sink
@@ -54,7 +56,7 @@ def make_pipeline(idx: int):
 
 
 # If --dual is provided, run two pipelines (camera_index and camera_index+1). Otherwise run one.
-indices = [args.camera_index, args.camera_index + 1] if args.dual else [args.camera_index]
+indices = [0, 1] if args.dual else [0]
 
 pipelines = []
 appsinks = []
@@ -66,7 +68,7 @@ for idx in indices:
     pipelines.append((idx, p))
     appsinks.append((idx, s))
 
-mcap_file = f"camera_{args.camera_index}_{time.strftime('%Y%m%d_%H%M%S')}.mcap"
+mcap_file = f"capture_{time.strftime('%Y%m%d_%H%M%S')}.mcap"
 
 print(f"🎥 Recording webcam to {mcap_file}... Press Ctrl+C to stop")
 
@@ -75,7 +77,7 @@ try:
     # channels created with the same context to be recorded to the file.
     ctx = foxglove.Context()
 
-    server = foxglove.start_server(context=ctx)
+    server = foxglove.start_server(context=ctx, host="0.0.0.0")
 
     # Open the MCAP writer once and keep it open while recording
     with foxglove.open_mcap(mcap_file, context=ctx) as writer:
