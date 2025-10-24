@@ -30,7 +30,7 @@ pipeline_str = f"""
 nvarguscamerasrc sensor_id={{idx}} !
 video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1,format=NV12 !
 nvvidconv flip-method={{flip}} ! video/x-raw,width=960,height=720 !
-nvv4l2h264enc bitrate=8000000 !
+x264enc tune=zerolatency bitrate=4000 speed-preset=veryfast !
 h264parse config-interval=1 !
 video/x-h264,stream-format=byte-stream,alignment=au !
 appsink name=sink emit-signals=true max-buffers=1 drop=true
