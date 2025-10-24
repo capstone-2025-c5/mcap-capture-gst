@@ -16,12 +16,12 @@ args = parser.parse_args()
 
 Gst.init(None)
 
-# Raw image pipelines (no encoding, just video conversion to I420 for consistent format)
+# Raw image pipelines (convert to RGB8 for Foxglove compatibility)
 pipeline_str_mac = f"""
 avfvideosrc device-index={{idx}} !
 video/x-raw,format=UYVY,width=1280,height=720,framerate=15/1 !
 videoconvert !
-video/x-raw,format=I420 !
+video/x-raw,format=RGB !
 appsink name=sink emit-signals=true max-buffers=1 drop=true
 """
 
@@ -30,7 +30,7 @@ nvarguscamerasrc sensor_id={{idx}} !
 video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1,format=NV12 !
 nvvidconv flip-method={{flip}} ! video/x-raw,width=960,height=720 !
 videoconvert !
-video/x-raw,format=I420 !
+video/x-raw,format=RGB !
 appsink name=sink emit-signals=true max-buffers=1 drop=true
 """
 
@@ -133,15 +133,15 @@ try:
 
                 timestamp_ns = Timestamp.from_epoch_secs(time.time())
 
-                # I420 format: Y plane followed by U and V planes (interleaved or separate)
-                # For Foxglove RawImage, encoding is typically the pixel format string
+                # RGB8 format: each pixel is 3 bytes (R, G, B)
+                # step = width * 3 (bytes per row)
                 img_msg = RawImage(
                     timestamp=timestamp_ns,
                     data=data,
                     width=width,
                     height=height,
-                    encoding="yuv422",
-                    step=width,  # bytes per row for Y plane (for I420, step = width)
+                    encoding="rgb8",
+                    step=width * 3,  # bytes per row for RGB8
                     frame_id=frame_id,
                 )
 
