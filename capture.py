@@ -6,11 +6,18 @@ import json
 import gi
 gi.require_version("Gst", "1.0")
 from gi.repository import Gst, GLib
+import argparse
+
+
+parser = argparse.ArgumentParser(description="Capture webcam video to MCAP file using Foxglove SDK and GStreamer")
+parser.add_argument("-c","--camera-index", type=int, default=0, help="camera index to use (default: 0)")
+parser.add_argument("-m", "--mac", action="store_true", help="run the macos pipeline")
+args = parser.parse_args()
 
 Gst.init(None)
 
-pipeline_str = """
-avfvideosrc device-index=0 !
+pipeline_str_mac = f"""
+avfvideosrc device-index={args.camera_index} !
 video/x-raw,format=UYVY,width=1280,height=720,framerate=15/1 !
 videoconvert !
 x264enc tune=zerolatency bitrate=4000 speed-preset=veryfast !
@@ -18,12 +25,22 @@ video/x-h264,stream-format=byte-stream !
 appsink name=sink emit-signals=true max-buffers=1 drop=true
 """
 
-pipeline = Gst.parse_launch(pipeline_str)
+pipeline_str = f"""
+nvarguscamerasrc sensor_id={args.camera_index} !
+video/x-raw(memory:NVMM),width=1920,height=1080,framerate=30/1,format=NV12 !
+nvvidconv flip-method=0 ! video/x-raw,width=960,height=720 !
+nvv4l2h264enc bitrate=8000000 ! video/x-h264,stream-format=byte-stream !
+appsink name=sink emit-signals=true max-buffers=1 drop=true
+"""
+
+pipeline = Gst.parse_launch(pipeline_str if not args.mac else pipeline_str_mac)
 appsink = pipeline.get_by_name("sink")
 
 pipeline.set_state(Gst.State.PLAYING)
 
-print("🎥 Recording webcam to webcam.mcap... Press Ctrl+C to stop")
+mcap_file = f"camera_{args.camera_index}_{time.strftime('%Y%m%d_%H%M%S')}.mcap"
+
+print(f"🎥 Recording webcam to {mcap_file}... Press Ctrl+C to stop")
 
 try:
     # Create an explicit context and open the MCAP writer bound to it. This allows
@@ -33,8 +50,7 @@ try:
     server = foxglove.start_server(context=ctx)
 
     # Open the MCAP writer once and keep it open while recording
-    # allow_overwrite=True so repeated runs replace the file instead of erroring
-    with foxglove.open_mcap("webcam.mcap", allow_overwrite=True, context=ctx) as writer:
+    with foxglove.open_mcap(mcap_file, context=ctx) as writer:
         # Create the image channel bound to the same context so messages are recorded
         image_channel = CompressedVideoChannel(topic="/camera/image/compressed", context=ctx)
 
